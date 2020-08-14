@@ -55,7 +55,7 @@ def patch_xrefs(find_addr, patch_addr, args, ip='localhost', port=4455, conn=Non
 
         for r in idautils.XrefsTo(find_addr):
             scn_args = conn.modules.idaapi.get_arg_addrs(r.frm)
-            if scn_args is None:
+            if scn_args is None and args:
                 print("Couldn't find args of %x" % r.frm)
                 continue
             if compare_args(args, scn_args, conn):
