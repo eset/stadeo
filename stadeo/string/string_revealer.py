@@ -122,6 +122,13 @@ class StringRevealer(object):
 
         return strings
 
+    @staticmethod
+    def _wipe_dse_errors(dse):
+        dse.symb.reset_modified()
+        dse.jitter.vm.set_exception(0)
+        dse.jitter.cpu.set_exception(0)
+        dse.jitter.bs._atomic_mode = False
+
     def _process_func(self, func):
         dse = DSEEngine(self.sb.machine)
         dse.attach(self.sb.jitter)  # needs to be attached before setting exec_cb to overwrite it with ours
@@ -147,12 +154,7 @@ class StringRevealer(object):
             if not addr:
                 continue
             occurances.clear()
-            self.sb.jitter.init_run(addr)
-            dse.symb.reset_modified()  # wipe errors from previous execution
-            try:
-                self.sb.jitter.continue_run()
-            except Exception as e:
-                pass
+            self._emul_address(dse, addr)
             dse.update_state_from_concrete()
             strings.update(self._get_strings_from_dse(dse))
             dse.restore_snapshot(initial_snap)
@@ -160,6 +162,25 @@ class StringRevealer(object):
         dse.restore_snapshot(bak_snap)
         strings = self._get_top_level_strings(strings)
         return strings
+
+    def _emul_address(self, dse, addr):
+        self.sb.jitter.init_run(addr)
+        crashed = set()
+        while 1:
+            self._wipe_dse_errors(dse)
+            try:
+                self.sb.jitter.continue_run()
+            except Exception as e:
+                if isinstance(e, RuntimeError) and \
+                        e.args and e.args[0] == "Cannot find address" and \
+                        self.sb.jitter.pc not in crashed:
+                    instr = self.sb.jitter.jit.mdis.dis_instr(self.sb.jitter.pc)
+                    crashed.add(self.sb.jitter.pc)
+                    if instr:
+                        next_addr = self.sb.jitter.pc + instr.l
+                        self.sb.jitter.init_run(next_addr)
+                        continue
+            break
 
     @staticmethod
     def _get_top_level_strings(strings):
