@@ -11,7 +11,7 @@ from miasm.analysis.depgraph import *
 from miasm.analysis.disasm_cb import get_ira
 from miasm.analysis.machine import Machine
 from miasm.arch.x86.arch import instruction_x86, additional_info, mn_x86, conditional_branch, unconditional_branch
-from miasm.core.asmblock import _parent, _son, AsmBlock, AsmConstraint, AsmConstraintNext, AsmConstraintTo, _expgraph, \
+from miasm.core.asmblock import AsmBlock, AsmConstraint, AsmConstraintNext, AsmConstraintTo, bbl_simplifier, \
     asm_resolve_final, AsmCFG
 from miasm.core.bin_stream import bin_stream_pe
 from miasm.core.utils import pck32, pck64, upck64, upck32
@@ -296,57 +296,11 @@ def fix_multiple_next_constraints(asmcfg, mode):
         asmcfg.add_block(block)
 
 
-def merge_blocks(graph):
-    # borrowed and modified from miasm
-    """Graph simplification merging AsmBlock with one and only one son with this
-    son if this son has one and only one parent"""
-
-    # Blocks to ignore, because they have been removed from the graph
-    to_ignore = set()
-
-    for match in _expgraph.match(graph):
-
-        # Get matching blocks
-        lbl_block, lbl_succ = match[_parent], match[_son]
-        block = graph.loc_key_to_block(lbl_block)
-        succ = graph.loc_key_to_block(lbl_succ)
-
-        # Ignore already deleted blocks
-        if block in to_ignore or succ in to_ignore:
-            continue
-
-        # Remove block last instruction if needed
-        last_instr = block.lines[-1]
-        if last_instr.delayslot > 0:
-            raise RuntimeError("Not implemented yet")
-
-        if last_instr.is_subcall():
-            continue
-        if last_instr.breakflow() and last_instr.dstflow():
-            block.lines.pop()
-
-        # remove useless comparisons
-        ind = 0
-        while ind < len(block.lines):
-            if block.lines[ind].name == "CMP":
-                block.lines.pop(ind)
-            else:
-                ind += 1
-
-        # Merge block
-        block.lines += succ.lines
-        for nextb in graph.successors_iter(lbl_succ):
-            graph.add_edge(lbl_block, nextb, graph.edges2constraint[(lbl_succ, nextb)])
-
-        graph.del_block(succ)
-        to_ignore.add(lbl_succ)
-
-
 def write_patches_to_file(asmcfg, exectbl, out_addr, out_file_name, mode, max_addr=2 ** 64 - 1, head=None):
     if head is None:
         head = asmcfg.heads()[0]
 
-    merge_blocks(asmcfg)
+    asmcfg = bbl_simplifier.apply_simp(asmcfg)
     asmcfg.rebuild_edges()
     remove_redundant_and_unpin_blocks(asmcfg, head, mode)
     fix_multiple_next_constraints(asmcfg, mode)

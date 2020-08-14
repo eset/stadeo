@@ -6,6 +6,7 @@
 
 import logging
 
+from miasm.analysis.depgraph import DependencyGraph
 from miasm.arch.x86.arch import instruction_x86, additional_info
 from miasm.core.asmblock import AsmConstraintTo, AsmBlock, AsmConstraint, AsmCFG
 from miasm.core.locationdb import LocationDB
@@ -111,14 +112,8 @@ class CFFSolver(object):
             simplified_target = symb_exec.eval_expr(self.ircfg.IRDst)
             if isinstance(simplified_target, ExprInt):
                 simplified_target = self.asmcfg.loc_db.get_offset_location(int(simplified_target))
-                constraints = {AsmConstraintTo(simplified_target)}
-                mode = self.asmcfg.mode
-                new_block.lines[-1] = create_jump_instruction(mode, ExprLoc(simplified_target, mode))
             elif isinstance(simplified_target, ExprLoc):
                 simplified_target = simplified_target.loc_key
-                constraints = {AsmConstraintTo(simplified_target)}
-                mode = self.asmcfg.mode
-                new_block.lines[-1] = create_jump_instruction(mode, ExprLoc(simplified_target, mode))
             else:
                 # there's probably a(n) (series of) unknown instruction(s) causing an implicit conditional assignment
                 # such as CMOV or SBB->AND->ADD, prepend comparison + cond jump if it happens to be common, or add it to
@@ -131,6 +126,22 @@ class CFFSolver(object):
                                (str(source_flat_block.block_loc_key), addr))
                 logger.warning("the simplified target is %s of instance %s" %
                                (simplified_target, type(simplified_target)))
+                simplified_target = None
+            if simplified_target:
+                constraints = {AsmConstraintTo(simplified_target)}
+                mode = self.asmcfg.mode
+
+                # remove redundant comparison
+                dp = DependencyGraph(self.ircfg, True)
+                block_loc_key = source_block.loc_key
+                res = next(dp.get(block_loc_key, {self.ircfg.IRDst}, None, {block_loc_key}))
+                for depnode in res.relevant_nodes:
+                    ind = depnode.line_nb
+                    ind -= (len(self.ircfg.blocks[block_loc_key]) - len(new_block.lines))
+                    if new_block.lines[ind].name == "CMP":
+                        new_block.lines.pop(ind)
+
+                new_block.lines[-1] = create_jump_instruction(mode, ExprLoc(simplified_target, mode))
 
         # copy constraints
         new_bto = set()
