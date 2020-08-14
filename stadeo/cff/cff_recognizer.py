@@ -527,29 +527,28 @@ class CFFRecognizer(object):
             raise RuntimeError("There must be a back-edge")
 
     def _cff_loop_sanity_check(self, primary_loc_keys, node, affected_lines):
-        affected_immediate_nb = suitable_predecessors = 0
-        try:
-            wanted = affected_lines.keys() | self.asmcfg.jmp_table_loc_keys
-            for i in primary_loc_keys:
-                affected_immediate_nb += i not in self.asmcfg.heads() and \
-                                         self.analyses.immediate_dominators[i] in wanted
-                # suitable_predecessors += set(self.ircfg.predecessors(i)).issubset(wanted)
-                # there can be 3 bad predecessors: the range check, the first block, the dispatch
-                # TODO test suitable_predecessors before implementing, they weren't required before
-        except KeyError:
-            raise RuntimeError()
+        wanted_jump_tables = \
+            {i for i in self.asmcfg.jmp_table_loc_keys
+             if set(self.ircfg.predecessors(i)).issubset(primary_loc_keys)}
+        wanted = affected_lines.keys() | wanted_jump_tables
+        tolerance = self._merging_var_candidates is not None
+        for i in primary_loc_keys:
+            if i not in self.asmcfg.heads() | self.analyses.rev_back_edges.keys() and \
+                    (self.analyses.immediate_dominators[i] not in wanted and
+                     (set(self.ircfg.predecessors(i)).issubset(wanted) or
+                     i in self.analyses.rev_back_edges.values())):
+                # immediate dominators must contain affected blocks, except the first one, jump table blocks and in
+                # case of merged function the initial range check; check predecessors too
+                if tolerance:
+                    # initial range check check
+                    if all(i in self.analyses.dominators[j] or i == j for j in primary_loc_keys):
+                        tolerance = False
+                        continue
+                raise RuntimeError()
 
         if not (len(primary_loc_keys) > 1 and
-                len(primary_loc_keys) - 1 - (self._merging_var_candidates is not None) <= affected_immediate_nb and
-                # len(primary_loc_keys) - 2 - (self.merging_var_candidates is not None) <= suitable_predecessors and
                 all(node in self.analyses.dominators[i] for i in primary_loc_keys)):
-            # in this case AL is part of EAX which is tracked, FP affecting huge number of IRDsts therefore we require
-            # that none of them are solved to skip it
-            # MOV        AL, BYTE PTR [ECX]
-            # CMP        AL, 0x30
-            # the assignment has to dominate all the primary loc_keys and immediate dominators must contain affected
-            # blocks, except the first one; jump table blocks and in case of merged function the initial range check;
-            # all the primary blocks have to present in the dominator tree
+            # the assignment has to dominate all the primary loc_keys
             raise RuntimeError()
 
     def _create_flattening_loop(self, node, assign_blocks, affected_lines):
