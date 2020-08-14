@@ -229,7 +229,8 @@ class CFFRecognizer(object):
                 # propagate known zeroes to process test    eax, eax; jnz ...; lea     edi, [eax+4]
                 symb_exec = SymbolicExecutionEngine(self.ir_arch)
                 dst = symb_exec.eval_updt_irblock(irb)
-                if dst.is_cond() and dst.cond.is_id():
+                if dst.is_cond() and dst.cond.is_id() and not is_bad_expr(dst.cond) and \
+                        symb_exec.eval_expr(dst.cond) == dst.cond:
                     # add explicit mov ID, 0 to given irb
                     target_loc = dst.src2
                     if target_loc.is_int():
@@ -237,6 +238,8 @@ class CFFRecognizer(object):
                     elif target_loc.is_loc():
                         target_loc = target_loc.loc_key
                     else:
+                        continue
+                    if len(self.ircfg.predecessors(target_loc)) > 1:
                         continue
                     target_irb = self.ircfg.blocks[target_loc]
                     asign_blk = AssignBlock([ExprAssign(dst.cond, ExprInt(0, dst.cond.size))])
