@@ -25,7 +25,8 @@ setup(
         'z3-solver==4.8.7.0',
         'sortedcontainers',
         'rpyc',
-        'miasm @ git+https://github.com/cea-sec/miasm@master',
+        'future',
+        'miasm @ git+https://github.com/cea-sec/miasm@a01c29cd82f5a717e8dee622002e1ca3e189f420',
     ],
     keywords=[
         "reverse engineering",
