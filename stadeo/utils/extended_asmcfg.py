@@ -11,6 +11,7 @@ from miasm.analysis.depgraph import *
 from miasm.analysis.disasm_cb import get_ira
 from miasm.analysis.machine import Machine
 from miasm.arch.x86.arch import instruction_x86, additional_info, mn_x86, conditional_branch, unconditional_branch
+from miasm.arch.x86.sem import ir_x86_64
 from miasm.core.asmblock import AsmBlock, AsmConstraint, AsmConstraintNext, AsmConstraintTo, bbl_simplifier, \
     asm_resolve_final, AsmCFG
 from miasm.core.bin_stream import bin_stream_pe
@@ -125,6 +126,17 @@ def custom_split_flow(self):
 
 instruction_x86.breakflow = custom_break_flow
 instruction_x86.splitflow = custom_split_flow
+
+old_mod_pc = ir_x86_64.mod_pc
+
+
+def custom_mod_pc(self, instr, instr_ir, extra_ir):
+    if None in [instr.offset, instr.l]:
+        return
+    old_mod_pc(self, instr, instr_ir, extra_ir)
+
+
+ir_x86_64.mod_pc = custom_mod_pc
 
 
 def custom_get_next_loc_key(self, instr):
